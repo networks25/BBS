@@ -1,0 +1,342 @@
+# Frame structure:
+
+* Preamble (sync bits)
+
+* Destination MAC address
+
+* Source MAC address
+
+* EtherType/Length
+
+* Payload (46–1500 bytes typically)
+
+* FCS (CRC32 checksum)
+
+Every NIC (Network Interface Card) listens for frames that match its MAC address (or broadcast/multicast it subscribes to).
+
+
+## How Ethernet Sends Frames
+
+### Originally
+
+Ethernet used a shared medium (a single coax cable). Multiple devices tapped into the same line.
+
+Access method: CSMA/CD (Carrier Sense Multiple Access with Collision Detection).
+
+Carrier Sense: listen before sending.
+
+Multiple Access: many devices share the medium.
+
+Collision Detection: if two talk at once, both stop, wait a random time (backoff), then retry.
+
+### Modern Ethernet
+
+(switched, full-duplex) does not use CSMA/CD, since each link is its own segment.
+
+## Collision Domain
+
+A collision domain is the set of devices that share the same transmission medium and could have their frames collide.
+
+With a hub (physical layer repeater), the whole hub is one collision domain.
+
+With a switch, each port is its own collision domain (so no collisions in full-duplex switched Ethernet).
+
+
+Hub vs Switch
+
+Hub:
+
+Layer 1 device.
+
+Just repeats incoming signals out of all other ports.
+
+Can’t distinguish MAC addresses.
+
+One collision domain, one broadcast domain.
+
+Half-duplex only.
+
+Switch:
+
+Layer 2 device.
+
+Learns MAC addresses -> builds a MAC address table (port -> MAC).
+
+Forwards frames only to the correct port (unicast).
+
+Each port is a separate collision domain.
+
+Still one broadcast domain unless VLANs are used.
+
+Can do full-duplex, so no CSMA/CD needed.
+
+
+-----------------
+
+
+same address - port flapping.
+
+------------------
+
+
+
+
+Ethernet and ARCNET (Attached Resource Computer NETwork) were both popular in the 1980s/90s.
+
+Medium Access:
+
+Ethernet -> CSMA/CD (listen & collide).
+
+ARCNET -> token passing (no collisions; devices take turns).
+
+Determinism:
+
+Ethernet -> nondeterministic (collisions and backoff make timing unpredictable).
+ARCNET -> deterministic (since the token is passed predictably). This is why ARCNET was sometimes favored in industrial/real-time setups.
+
+Frame sizes:
+
+Ethernet -> up to 1500 bytes payload.
+
+ARCNET -> smaller, typically 507 bytes max.
+
+Speed:
+
+Early Ethernet: 10 Mbps.
+
+ARCNET: 2.5 Mbps (slower but reliable).
+
+Topology:
+
+Ethernet: originally bus (coax), then star (with hubs/switches).
+
+ARCNET: star or bus, with active hubs.
+
+
+# Ethernet Preamble and SFD
+
+Before the actual Ethernet frame (destination MAC, source MAC, etc.), there’s a preamble:
+
+7 bytes (56 bits) of alternating 10101010 (hex 0x55).
+
+Followed by 1 byte Start Frame Delimiter (SFD): 10101011 (hex 0xAB).
+
+So on the wire you see:
+
+```
+Preamble:  01010101 01010101 01010101 01010101 01010101 01010101 01010101
+SFD:       10101011
+```
+
+The preamble (0101...) is like a metronome: it lets receiving NICs lock onto the signal and sync their clocks.
+
+The SFD (10101011) marks: “Okay, now the real frame starts!”
+
+# Ethernet frame format
+
+```
++----------------+----------------+----------------+----------------+
+|  Preamble (7)  |   SFD (1)      |  Dest. MAC (6) |  Src. MAC (6)  |
+|  0x55...       |   0xAB         |                |                |
++----------------+----------------+----------------+----------------+
+|  EtherType (2) |               Payload (46–1500)                 |
+|   e.g. 0x0800  |   (IP packet, ARP, etc.)                        |
++----------------+-------------------------------------------------+
+|                    Frame Check Sequence (FCS, 4)                 |
+|                    CRC-32 checksum                               |
++------------------------------------------------------------------+
+```
+
+Preamble (7 bytes)
+
+01010101 pattern (0x55)
+
+Lets NICs synchronize clocks.
+
+SFD – Start Frame Delimiter (1 byte)
+
+10101011 (0xAB)
+
+Marks the end of the preamble and start of the frame.
+
+Destination MAC (6 bytes)
+
+The hardware address of the receiver.
+
+Could be unicast, broadcast (FF:FF:FF:FF:FF:FF), or multicast.
+
+Source MAC (6 bytes)
+
+Sender’s hardware address.
+
+EtherType (2 bytes)
+
+What’s inside the payload:
+
+0x0800 = IPv4
+
+0x86DD = IPv6
+
+0x0806 = ARP
+
+etc.
+
+Payload (46–1500 bytes)
+
+The actual data (e.g. an IP packet).
+
+If smaller than 46 bytes, padding is added.
+
+FCS (Frame Check Sequence, 4 bytes)
+
+CRC-32 checksum.
+
+Detects errors in transmission.
+
+
+## CRC32
+
+CRC32 = Cyclic Redundancy Check (32-bit)
+
+CRC32 is an error-detecting code used in Ethernet (and many other protocols, like ZIP, PNG, gzip).
+
+At the end of every Ethernet frame, there’s a Frame Check Sequence (FCS):
+
+4 bytes (32 bits).
+
+It’s a checksum, but much stronger than a simple sum.
+
+### How It Works (Conceptually)
+
+Think of the data bits in the frame as a very long number.
+
+Divide that number by a special generator polynomial (for CRC32, it’s fixed).
+
+Take the remainder of that division -> that’s the CRC32 value.
+
+Append the remainder (32 bits) to the frame.
+
+At the receiver side:
+
+The NIC performs the same division.
+
+If the remainder is zero -> frame is valid.
+
+If not -> error -> frame is discarded.
+
+
+Hub:
+
+```
+    [A]---+
+          |   HUB
+    [B]---+======+---[C]
+
+Collision Domain: [ A, B, C all share one! ]
+```
+
+If A talks, all ports hear it.
+
+If B talks at the same time -> collision.
+
+Only one conversation at a time.
+
+Switch:
+
+```
+    [A]---[ ]
+          |       SWITCH
+    [B]---[ ]======[ ]---[C]
+
+Collision Domains:
+[A]<->Switch   [B]<->Switch   [C]<->Switch
+(each port is its own)
+```
+
+If A sends to B, only B gets the frame.
+
+C doesn’t see it.
+
+A–B and C–Switch can talk simultaneously.
+
+No collisions in full-duplex mode.
+
+
+
+### The Old Bus Ethernet (10BASE5, 10BASE2 coax)
+
+All stations tapped into the same coax cable.
+
+That cable was a shared medium -> one long “wire.”
+
+### Half-duplex only: devices could either transmit or listen, but not both.
+
+When two stations transmitted at the same time:
+
+Each NIC put its signal on the wire.
+
+Those signals overlapped (superimposed).
+
+The voltage waveform got scrambled (not a valid signal anymore).
+
+Neither frame could be decoded correctly.
+
+This is the “collision” — like two people talking loudly at the same time on one telephone line.
+
+Result:
+
+Both frames are corrupted and dropped by everyone.
+
+NICs detect this by monitoring the line (they see energy that doesn’t match their own transmission).
+
+Then they stop, send a jam signal (to make sure everyone knows a collision happened), and back off.
+
+-----------------------------
+
+Half-Duplex Ethernet with a Hub (10BASE-T with repeater hub)
+
+In the early 1990s, Ethernet switched to star wiring (twisted pair), but hubs were still essentially repeaters:
+
+Each port -> just an electrical echo of all others.
+
+So even though it looked like a star physically, logically it was still one bus.
+
+Still half-duplex.
+
+Collisions worked the same way:
+
+If Host A transmits and Host B transmits, the hub simply repeats both at the same time.
+
+The two electrical signals mix together on the outgoing lines.
+
+Again, collision -> garbage -> nobody gets a valid frame.
+
+Collision Detection (CSMA/CD)
+
+Ethernet’s method: Carrier Sense Multiple Access with Collision Detection.
+
+Carrier Sense: listen if the line is free before sending.
+
+### Collision Detection
+
+keep listening while sending — if the voltage/current on the line doesn’t match what you’re sending, you know another station is talking too.
+
+If a collision is detected:
+
+Stop sending immediately.
+
+Send a short jam pattern (so all NICs notice).
+
+Wait a random backoff time (exponential backoff).
+
+Retry later.
+
+### Modern Ethernet (Switches, Full-Duplex)
+
+With switches, each port is its own collision domain.
+
+Full-duplex: one pair of wires for TX, another for RX.
+
+Collisions simply don’t exist anymore.
+
+CSMA/CD is now obsolete (but it’s still described in standards for backward compatibility).

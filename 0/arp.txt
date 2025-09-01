@@ -1,0 +1,67 @@
+# DHCP
+
+At the Ethernet (Layer 2) level, the destination MAC address is FF:FF:FF:FF:FF:FF, which means the packet is broadcast to all devices on the local subnet.
+
+All devices on the local subnet receive the broadcast, but only devices configured as DHCP servers will respond.
+
+The DHCP server(s) reply with a DHCP Offer packet, which includes:
+
+*    An available IP address for the client.
+*    Subnet mask.
+*    Gateway (router) address (e.g., 192.168.1.1 in many cases).
+*    Other configuration details (DNS servers, lease time, etc.).
+
+## What If There Are Multiple DHCP Servers?
+
+If there are multiple DHCP servers on the subnet, they will all respond to the DHCP Discover broadcast. The client will receive multiple DHCP Offers and typically accepts the first one it receives by sending a DHCP Request to that specific server.
+
+The other DHCP servers will "back off" after seeing the client's DHCP Request to another server.
+
+ARP is used to map IP addresses to MAC addresses on a local network (Layer 2 of the OSI model).
+When a device needs to send a packet to an IP address, it broadcasts an ARP request like:
+
+    "Who has IP 192.168.1.1? Tell me your MAC address."
+
+The device with that IP responds with an ARP reply, saying:
+
+    "I have 192.168.1.1. My MAC is AA:BB:CC:DD:EE:FF."
+
+## What is ARP Spoofing?
+
+ARP spoofing is a type of attack where a malicious actor sends fake ARP (Address Resolution Protocol) messages on a network. The goal is to associate the attacker’s MAC address with the IP address of another device (e.g., a router or a victim’s computer). This allows the attacker to intercept, modify, or disrupt traffic between devices on the network.
+How ARP Works (Quick Review)
+
+    ARP is used to map IP addresses to MAC addresses on a local network (Layer 2 of the OSI model).
+    When a device needs to send a packet to an IP address, it broadcasts an ARP request like:
+        "Who has IP 192.168.1.1? Tell me your MAC address."
+    The device with that IP responds with an ARP reply, saying:
+        "I have 192.168.1.1. My MAC is AA:BB:CC:DD:EE:FF."
+
+# What Happens in ARP Spoofing
+
+## The Attacker Sends Fake ARP Replies:
+
+The attacker sends forged ARP replies on the network, associating their MAC address with the IP address of a target device (e.g., the router).
+
+Devices Update Their ARP Tables:
+Other devices on the network update their ARP cache with the fake information.
+
+Traffic Interception:
+Now, traffic meant for the target IP (e.g., the router) is sent to the attacker instead.
+
+Consequences:
+The attacker can:
+
+* Intercept traffic.
+* Modify the data in transit.
+* Completely disrupt communication by dropping packets (denial of service).
+
+How to Mitigate ARP Spoofing
+
+* Use Static ARP entries (manually map IPs to MACs for critical devices).
+* Enable ARP inspection on managed switches.
+* Use network security tools to detect and block suspicious ARP activity.
+
+The most working:
+* Identify the person who does ARP spoofing and tell them to not do that.
+
