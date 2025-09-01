@@ -10,7 +10,7 @@
 
 **TA: Vachagan Ghratian
 
-**Email Address:** vgratian@rizeup.net
+**Email Address:** to be added
 
 **Office Location:** I prefer to go to the Faculty room, come and knock.
 
