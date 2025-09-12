@@ -8,9 +8,9 @@
 
 **Email Address:**  nchilingaryan@aua.am
 
-**TA: Vachagan Ghratian
+**TA: Vachagan Gratian
 
-**Email Address:** to be added
+**Email Address:** vgratian@riseup.net
 
 **Office Location:** I prefer to go to the Faculty room, come and knock.
 
