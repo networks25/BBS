@@ -1,0 +1,332 @@
+# Bootstrapping
+
+When you start tor (the client/daemon), you’ll see log lines like:
+
+```
+Bootstrapped 0% (starting): Starting
+Bootstrapped 5% (conn): Connecting to a relay
+Bootstrapped 10% (conn_done): Connected to a relay
+Bootstrapped 80% (ap_handshake): Finishing handshake with proxy
+Bootstrapped 90% (ap_handshake_done): Handshake finished
+Bootstrapped 100% (done): Done
+```
+
+Each of these corresponds to phases of network discovery, directory retrieval, and circuit establishment.
+
+## 🧱 Hardcoded Directory Authorities
+
+Tor has a list of ~10 Directory Authorities compiled directly into the source code (src/app/config/dir_auth_defaults.inc).
+
+Each entry contains:
+
+* IP address
+
+* TCP ORPort (usually 9001)
+
+* DirPort (directory port)
+
+* Identity fingerprint
+
+"moria1 orport=9101 v3ident=9695DFC35FFEB861329B9F1AB04C46397020CE31 "
+"128.31.0.39:9131 9695DFC35FFEB861329B9F1AB04C46397020CE31"
+
+
+This is similar to “DNS root servers”: these are stable, well-known, hardcoded servers run by trusted operators.
+They are not relays used for data transfer, but authoritative sources of network consensus.
+
+## 🧾 Consensus Document Fetch
+
+* At startup, Tor connects directly to several directory authorities using TCP.
+
+* It downloads the “network consensus” — a signed document listing every currently running relay, their IP addresses, capabilities, flags (Exit, Guard, HSDir, etc.), and cryptographic keys.
+
+* It also fetches microdescriptors for each relay.
+
+
+# Normal DNS
+
+Browser resolves example.com using system DNS → UDP to 8.8.8.8 (or whatever), before proxying.
+
+-> This leaks DNS.
+
+## 🧠 SOCKS5 Remote DNS
+
+Instead of resolving locally, the browser sends a SOCKS5 request to Tor like:
+
+SOCKS5 RESOLVE example.com
+
+
+Tor receives this, and does the resolution inside the Tor network:
+
+If it’s a normal domain (e.g. example.com):
+
+Tor builds a circuit to an exit node.
+
+That exit node performs DNS resolution on behalf of the client, using its configured system resolver (often standard recursive DNS).
+
+The result is returned through the circuit back to the client.
+
+→ So effectively, the exit node’s DNS resolver is the one that resolves clearnet domains.
+
+## If it’s an .onion domain:
+
+Tor does not use DNS at all.
+
+The .onion TLD is entirely handled inside Tor, using hidden service descriptors stored in the distributed hash table (DHT) across HSDir nodes.
+
+Tor extracts the onion public key (v3 is 56 characters), looks up the service descriptor via the HSDir DHT (stored in special relays designated as HSDir), and builds a rendezvous circuit to the hidden service.
+
+No external DNS queries are ever made.
+
+👉 So the “DNS server” for onion domains is effectively the Tor network itself — it’s not DNS at all.
+
+
+# Relays
+
+# 🧠 1. Running a Tor service with a real IP ≠ being a relay
+
+Just running tor on your machine with a real IP does not automatically make your node part of the public Tor relay network.
+
+By default, Tor runs in client mode:
+
+It downloads the consensus.
+
+It builds circuits.
+
+It does not accept incoming Tor connections.
+
+👉 If you want to become a relay, you have to explicitly configure it in torrc, for example:
+
+```
+ORPort 9001
+Nickname myrelaynode
+ExitRelay 0
+```
+
+and make sure the ORPort is reachable from the internet. Then your Tor daemon:
+
+Announces itself to directory authorities, giving IP, keys, port, capabilities.
+
+Waits to be included in the next consensus.
+
+## 🌐 2. Telling the network you're a relay
+
+When your Tor relay starts with ORPort enabled:
+
+1. It generates a long-term identity key.
+
+2. It creates a server descriptor, which includes:
+
+* IP, ORPort, DirPort (if any)
+
+* Public keys for TLS and onion routing
+
+* Declared bandwidth and capabilities
+
+* Contact info, etc.
+
+It uploads this descriptor to directory authorities.
+
+The directory authorities:
+
+* Verify the descriptor’s format, basic reachability (they may ping it), and signatures.
+
+* If valid, they include it in the next hourly consensus.
+
+So you must “tell” the authorities you’re a relay by publishing a signed descriptor.
+
+# Kinds of relays
+
+* Guard(Entry) - First hop in circuits.
+* Middle       - Intermediate hops.
+* Exit         - Last hop. connects to clearnet destinations and does DNS resolution.
+* Bridge       - Not listed in consensus. Used by censored clients to connect discreetly.
+* Directory Authority - Special hardcoded servers that maintain consensus. Not "normal" relays.
+
+A single relay can advertise multiple roles. For example:
+
+* Most non-exit relays are "non-exit" middle/guard relays.
+* To be a guard, a relay must have stable uptime and good bandwidth.
+* To be an exit, you configure ExitPolicy in torrc.
+
+# 4. Is any host that presents itself as relay trusted?
+
+Tor does not rely on individual relay trust. Any host can present itself as a relay by uploading a descriptor.
+
+But:
+
+* Relays are not automatically accepted into critical roles.
+* Guards are selected based on stability, bandwidth and flags granted by authorities.
+* Consensus documents are signed by all directory authorities, so clients trust the consensus, not the individual relay's self-claims.
+
+This is why directory authorities are so important: they collectively decide what relays exist and what flags they get (Guard, HSDir, Exit, etc.). A single malicious relay can't just claim "I am a guard and exit" and immediately get traffic. It must be signed consensus.
+
+# 5. What about governments running relays?
+
+They can do it and do it.
+
+However, Tor's security is based on probabilistic independence:
+
+* Circuits use three different relays chosen from different parts of the network.
+* Unless and adversary controls both the first and last hop, they can't correlate the traffic.
+* If they run some fraction f of the network, the chance of controlling both ends is roughly f² (assuming random selection, which is not strictly true but gives the idea).
+
+So if a government runs, say 10% of relays, the probability they control both entry and exit in a given circuit is about 1%.
+
+Tor also uses guard nodes: your client picks 1-3 guards and uses them for a long time, reducing the risk of exposure by rotating through many malicious entry nodes.
+
+Additionally, the directory authority operators are independent, long-time Tor community members, not centrally controlled by one party.
+
+# 6. How Tor builds a circuit
+
+Tor builds a circuit incrementally.
+
+1. Pick Guard node (Entry).
+* Based on consensus flags (Guard, stable, fast).
+* Establish TLS connection, perform NTor handshake.
+2. Pick Middle node.
+* Random relay, not the same family as Guard.
+* Extend circuit to it through the guard.
+3. Pick Exit node.
+* Based on desired destination (must allow exit to that IP/port).
+* Extend circuit to it through Guard->Middle->Exit.
+
+Each extension involves cryptographic key engotiation layered on to of the previous hops.
+
+# 7. Why "onion" routing? (Layered encryption).
+
+When sending data through a circuit of 3 nodes, the client wraps it in 3 layers of encryption, like an onion:
+
+```
+Encrypt for Exit
+  Encrypt for Middle
+    Encrypt for Guard
+      [payload]
+```
+
+Then it sends the onion to the Guard.
+* Guard peels off its outer layer, sees only "send to Middle".
+* Middle peels off its layer, sees "send to Exit".
+* Exit peels final layer, sees plaintext payload (e. g., HTTP request to example.com).
+
+On the way back:
+
+* Exit node encrypts the reply with its key.
+* Middle encrypts again.
+* Guard encrypts again.
+* Client receives triple encrypted data and decrypts in reverse order.
+
+# Routing summary.
+
+* Tor circuits typycally have 3 hops: Guard -> Middle -> Exit.
+* Hiddent services use 6 hops total (3 client + 3 service), via rendezvous points.
+* The path is deterministically layered, ont random per packet.
+* Circuits are reused for multiple streams for efficiency.
+
+# TLS keys in Tor - self-generated
+
+All Tor relays generate their own cryptographic keys - there's no certificate authority (CA) involved.
+When you run a relay, Tor automatically generates:
+
+* Identitiy key (long-term, used to identify the relay in the consensus; stays stable).
+* Onion key (medium-term, used in circuit establishment).
+* Link key (short-term, used for the TLS layer between relays).
+
+These are all self-signed. Tor uses its own directory authority PKI instead of the traditional TLS CA hierarchy.
+
+When two Tor nodes connect:
+
+* They perform a TLS handshake using their self-signed certificates.
+* Each node checks the peer's certificate fingerprint against the directory consensus to veryfy it's a listed relay with that identity.
+* If it matches -> connection accepted.
+* No external CA like Let's Encrypt or VeriSign is involved.
+
+All keys are self-generated. Trust comes from the signed consensus, not external PKI.
+
+### Reminder: Assymetric encryption
+
+In assymetric (public-key) crypto:
+* Every participant has a key pair:
+** Public key - shared with anyone
+** Private key - kept secret.
+* If you encrypt with the recipient's public key, only their private key can decrypt.
+
+* Conversely, if you sign with your private key, onyone can veryfy the signature using your public key.
+
+This is used in Tor's handshakes (NTor protocol), but with some extra ephemeral key exchange to ensure forward secrecy (so old keys don't decrypt new sessions).
+
+## Onion routing diagram
+Here's a simplified ASCII diagram of a Tor circuit with three hops:
+
+```
+        [Client]
+           |
+           |  Layer 3 (Encrypted for Exit)
+           |   Layer 2 (Encrypted for Middle)
+           |    Layer 1 (Encrypted for Guard)
+           v
+   +-------------+      +-------------+      +-------------+
+   | Guard Node  |----->| Middle Node |----->|  Exit Node  |-----> [Destination]
+   +-------------+      +-------------+      +-------------+
+       peel 1                 peel 2             peel 3
+
+← reply encrypted (Exit→Middle→Guard) back through layers
+```
+
+Each node peels off one layer on the way forward. On the way back, each node adds one layer, so the client decrypts in reverse.
+
+No single relay sees the whole picture:
+
+* Guard: sees Client IP, next hop (Middle), but not final destination.
+* Middle: sees only Guard and Exit.
+* Exit: sees destination, but not client IP (or Middle).
+
+# IMPORTANT:
+
+* TLS protects each individual connection (Guard-Middle, Middle-Exit)
+* Onion encryption wraps data for the entire multi-hop path.
+(this encryption is symmetric, the keys derived from NTor handshake (not TLS).
+
+
+## How keys are established for onion layers
+
+When Tor client builds a circuit, it performs a key exchange (the NTor handshake) with each hop in sequence.
+
+Roughly:
+
+Client <--> Guard --> derive K1
+Client <--> Middle --> derive K2 (through Guard)
+Client <--> Exit  --> derive K3 (through Guard and Middle).
+
+These are all done with assymetric cryptography.
+
+After that
+
+* K1, K2, K3 are shared secrets known only to the client and each corresponding relay.
+* All data traveling along the circuit is wrapped with these keys in layers.
+
+## Forward direction (client -> destination)
+
+When the client sends a cell (Tor packet):
+
+```
+Encrypt(payload, K3)
+Encrypt(result, K2)
+Encrypt(result, K1)
+-> send to Guard
+```
+
+* Guard decrypts with K1 -> sees destination "next hop = Middle".
+* Middle decrypts with K2 -> sees "next hop = Exit".
+* Exit decrypts with K3 -> sees actual TCP payload (e. g. HTTP request).
+
+# 4. Return direction (destination -> client)
+
+Now the process reverses:
+
+* Exit encrypts its reply with K3.
+* Middle encrypts that with K2.
+* Guard encrypts with K1.
+* Client receives the 3-layer ciphertext and decrypts in reverse order using K1, K2, K3.
+
+So each uses its own per-hop symmetric circuit key.

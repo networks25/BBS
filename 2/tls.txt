@@ -1,0 +1,44 @@
+```
+Client                                   Server
+  |                                        |
+  |---- ClientHello ---------------------->|
+  |       (random, supported ciphers, etc) |
+  |<--- ServerHello -----------------------|
+  |       (random, chosen cipher, etc)     |
+  |<--- Certificate -----------------------|
+  |<--- ServerKeyExchange* ----------------|
+  |<--- ServerHelloDone -------------------|
+  |                                        |
+  |---- ClientKeyExchange ---------------->|
+  |---- ChangeCipherSpec ----------------->|
+  |---- Finished --------------------------|
+  |<--- ChangeCipherSpec ------------------|
+  |<--- Finished --------------------------|
+  |                                        |
+  |====== Encrypted Application Data ======|
+```
+
+Short explanation
+
+1. ClientHello / ServerHello
+   Both sides agree on protocol version, cipher suite, and exchange random values.
+
+2. Server Certificate
+   The server sends its X.509 certificate for authentication (proves its identity).
+
+3. Key Exchange
+   Client and server establish a shared secret (via RSA or Diffie–Hellman).
+
+   In RSA, the client encrypts a premaster secret with the server’s public key.
+
+   In (E)DHE, both exchange key parameters and compute the same secret.
+
+4. Session Keys Derived
+   From both randoms + shared secret → symmetric keys for encryption & MAC.
+
+5. ChangeCipherSpec / Finished
+   Both announce they’re switching to encrypted mode.
+   Finished messages verify handshake integrity (using the new keys).
+
+6. Encrypted Communication
+   From now on, all application data (HTTP, etc.) is encrypted and authenticated.
