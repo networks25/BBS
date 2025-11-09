@@ -61,6 +61,9 @@ misfin is a very simple email protocol.
 
 ui or console program that can receive .gmi and other files, render the page, go by links.
 
+## spartan/gemini radio
+stream music over gemini. newly connected clients will start listening from the byte that should play at time they connected at.
+
 ## fast sender/receiver of many files
 since we learned that TCP is not optimal for small files, write a program which will send lots of small files in one stream, so on one end it should concatenate files on the fly and send, on the receiving side it should separate the files and save them.
 
