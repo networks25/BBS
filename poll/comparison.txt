@@ -1,0 +1,6 @@
+Concept  poll()  epoll()
+Registration  Pass struct pollfd[] every time  Register once using epoll_ctl()
+Notification  Returns all FDs each time  Returns only ready FDs
+Scalability  O(n) per call  O(1) per event
+Portability  Works on all Unix-like OS  Linux only
+Typical use  ≤ few hundred sockets  Thousands of sockets
