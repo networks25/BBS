@@ -7,7 +7,7 @@ def on_message(client, userdata, msg):
 client = mqtt.Client(protocol=mqtt.MQTTv311)
 client.on_message = on_message
 
-client.connect("10.0.0.1", 1883)
+client.connect("10.0.0.5", 1883)
 client.subscribe("demo/topic")
 
 client.loop_forever()
